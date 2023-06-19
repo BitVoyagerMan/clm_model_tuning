@@ -14,6 +14,7 @@ import os
 import random
 from itertools import chain
 import wandb
+import gc
 import datasets
 import hydra
 import torch
@@ -226,7 +227,23 @@ def tokenize_inputs(tokenizer, examples):
     out = {k: torch.stack(v) if isinstance(v, list) else v for k, v in out.items()}
 
     return out
+def clear_gpu_memory():
+    torch.cuda.empty_cache()
+    gc.collect()
+    del variables
 
+def wait_until_enough_gpu_memory(min_memory_available, max_retries=10, sleep_time=5):
+    nvmlInit()
+    handle = nvmlDeviceGetHandleByIndex(torch.cuda.current_device())
+
+    for _ in range(max_retries):
+        info = nvmlDeviceGetMemoryInfo(handle)
+        if info.free >= min_memory_available:
+            break
+        print(f"Waiting for {min_memory_available} bytes of free GPU memory. Retrying in {sleep_time} seconds...")
+        time.sleep(sleep_time)
+    else:
+        raise RuntimeError(f"Failed to acquire {min_memory_available} bytes of free GPU memory after {max_retries} retries.")
 def preprocess(cfg, accelerator, tokenizer, raw_datasets):
     # First we tokenize all the texts.
     # column_names = raw_datasets.column_names
@@ -475,7 +492,9 @@ def main(cfg: DictConfig):
         train_losses = []
         for step, batch in enumerate(train_dataloader):
             torch.cuda.memory_summary(device=None, abbreviated=False)
-            torch.cuda.empty_cache()
+            min_memory_available = 2 * 1024 * 1024 * 1024  # 2GB
+            clear_gpu_memory()
+            wait_until_enough_gpu_memory(min_memory_available)
             # We need to skip steps until we reach the resumed step
             if (
                     cfg.training.checkpoint.resume_from_checkpoint
