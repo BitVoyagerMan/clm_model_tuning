@@ -230,7 +230,7 @@ def tokenize_inputs(tokenizer, examples):
 def clear_gpu_memory():
     torch.cuda.empty_cache()
     gc.collect()
-    del variables
+    
 
 def wait_until_enough_gpu_memory(min_memory_available, max_retries=10, sleep_time=5):
     nvmlInit()
