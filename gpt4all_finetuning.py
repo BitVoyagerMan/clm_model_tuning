@@ -56,7 +56,7 @@ def check_cfg_and_load_defaults(cfg: DictConfig) -> DictConfig:
 
 def create_accelerator(cfg: DictConfig) -> Accelerator:
     accelerator = (
-        Accelerator(log_with=cfg.tracking.report_to, fp16=True, logging_dir=cfg.output_dir)
+        Accelerator(log_with=cfg.tracking.report_to, fp16=True, num_processes=2, logging_dir=cfg.output_dir)
         if cfg.tracking.enabled
         else Accelerator()
     )
