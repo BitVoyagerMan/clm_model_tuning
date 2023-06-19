@@ -29,6 +29,8 @@ from omegaconf import OmegaConf
 from omegaconf.dictconfig import DictConfig
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
+from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
+
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
