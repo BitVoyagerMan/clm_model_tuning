@@ -238,7 +238,7 @@ def preprocess(cfg, accelerator, tokenizer, raw_datasets):
 
 
     raw_datasets = raw_datasets.train_test_split(test_size=.05, seed=30)
-
+    train_dataset, val_dataset = raw_datasets["train"], raw_datasets["test"]
     # def group_texts(examples):
     #     # Concatenate all texts.
     #     concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
@@ -270,17 +270,30 @@ def preprocess(cfg, accelerator, tokenizer, raw_datasets):
 
     with accelerator.main_process_first():
         kwargs = {}
-        train_dataset = raw_datasets.map(
-            lambda ele: tokenize_inputs(tokenizer, ele),
+        train_dataset = train_dataset.map(
+        lambda ele: tokenize_inputs(tokenizer, ele),
+        batched=True,
+        remove_columns=["source", "prompt"],
+        **kwargs
+        )
+        val_dataset = val_dataset.map(
+            lambda ele: tokenize_inputs( tokenizer, ele),
             batched=True,
             remove_columns=["source", "prompt"],
             **kwargs
         )
         train_dataset = train_dataset.with_format("torch")
+        val_dataset = val_dataset.with_format("torch")
         train_dataloader = DataLoader(
             train_dataset,
             collate_fn=DefaultDataCollator(),
-            batch_size=16
+            batch_size=16,
+        )
+
+        val_dataloader = DataLoader(
+            val_dataset,
+            collate_fn=DefaultDataCollator(),
+            batch_size=16,
         )
         # tokenized_datasets = raw_datasets.map(
         #     tokenize_fn,
@@ -299,7 +312,7 @@ def preprocess(cfg, accelerator, tokenizer, raw_datasets):
         #         desc=f"Grouping texts in chunks of {cfg.dataset.block_size}",
         #     )
 
-    return train_dataloader
+    return train_dataloader, val_dataloader
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
@@ -340,38 +353,39 @@ def main(cfg: DictConfig):
 
     # Load and preprocess data
     raw_datasets = load_raw_datasets(cfg)
-    tokenized_datasets = preprocess(cfg, accelerator, tokenizer, raw_datasets)
-    # if "train" not in tokenized_datasets.column_names:
-    tokenized_datasets = tokenized_datasets.train_test_split(
-        test_size=cfg.training.val_split_percent / 100
-    )
-    tokenized_datasets_test_valid = tokenized_datasets["test"].train_test_split(
-        test_size=0.5
-    )
-    tokenized_datasets["test"] = tokenized_datasets_test_valid["train"]
-    tokenized_datasets["validation"] = tokenized_datasets_test_valid["test"]
+    # tokenized_datasets = preprocess(cfg, accelerator, tokenizer, raw_datasets)
+    # # if "train" not in tokenized_datasets.column_names:
+    # tokenized_datasets = tokenized_datasets.train_test_split(
+    #     test_size=cfg.training.val_split_percent / 100
+    # )
+    # tokenized_datasets_test_valid = tokenized_datasets["test"].train_test_split(
+    #     test_size=0.5
+    # )
+    # tokenized_datasets["test"] = tokenized_datasets_test_valid["train"]
+    # tokenized_datasets["validation"] = tokenized_datasets_test_valid["test"]
 
-    train_dataset = tokenized_datasets["train"]
-    eval_dataset = tokenized_datasets["validation"]
+    # train_dataset = tokenized_datasets["train"]
+    # eval_dataset = tokenized_datasets["validation"]
 
-    # Log a few random samples from the training set:
-    for index in random.sample(range(len(train_dataset)), 3):
-        ex = train_dataset[index]
-        logger.info(f"Sample {index} of the training set: {ex}: \n")
-        logger.info(tokenizer.decode(ex["input_ids"]))
+    # # Log a few random samples from the training set:
+    # for index in random.sample(range(len(train_dataset)), 3):
+    #     ex = train_dataset[index]
+    #     logger.info(f"Sample {index} of the training set: {ex}: \n")
+    #     logger.info(tokenizer.decode(ex["input_ids"]))
 
-    # DataLoaders creation:
-    train_dataloader = DataLoader(
-        train_dataset,
-        shuffle=True,
-        collate_fn=default_data_collator,
-        batch_size=cfg.training.train_batch_size,
-    )
-    eval_dataloader = DataLoader(
-        eval_dataset,
-        collate_fn=default_data_collator,
-        batch_size=cfg.training.eval_batch_size,
-    )
+    # DataLoaders creation:\
+    train_dataloader, eval_dataloader = preprocess(cfg, accelerator, tokenizer, raw_datasets)
+    # train_dataloader = DataLoader(
+    #     train_dataset,
+    #     shuffle=True,
+    #     collate_fn=default_data_collator,
+    #     batch_size=cfg.training.train_batch_size,
+    # )
+    # eval_dataloader = DataLoader(
+    #     eval_dataset,
+    #     collate_fn=default_data_collator,
+    #     batch_size=cfg.training.eval_batch_size,
+    # )
 
     # Prepare everything using our accelerator
     (
