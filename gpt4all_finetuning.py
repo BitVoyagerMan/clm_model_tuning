@@ -30,7 +30,7 @@ from omegaconf.dictconfig import DictConfig
 from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 from pynvml import nvmlInit, nvmlDeviceGetHandleByIndex, nvmlDeviceGetMemoryInfo
-
+import time
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -56,7 +56,7 @@ def check_cfg_and_load_defaults(cfg: DictConfig) -> DictConfig:
 
 def create_accelerator(cfg: DictConfig) -> Accelerator:
     accelerator = (
-        Accelerator(log_with=cfg.tracking.report_to, logging_dir=cfg.output_dir)
+        Accelerator(log_with=cfg.tracking.report_to, fp16=True, logging_dir=cfg.output_dir)
         if cfg.tracking.enabled
         else Accelerator()
     )

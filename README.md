@@ -39,7 +39,7 @@ Run ```pip install -r requirements.txt``` to install the additional packages req
 
 If you have a wandb link from the validator, you can override `dataset.name` as above and set `wandb` as 1:
 ```bash
-python finetune_using_clm.py dataset.wandb=1 dataset.name=/opentensor/opentensor-validator/runs/kltiefxf
+python gpt4all_finetuning.py dataset.wandb=1 dataset.name=/opentensor/opentensor-validator/runs/kltiefxf
 ```
 
 
@@ -63,7 +63,7 @@ You do not need to edit this file to change the parameters; they may be overridd
 script. e.g., if you wish to change the model to `nomic-ai/gpt4all-j`, and the output directory to `nomic-ai/gpt4all-j-tuned`, you would run:
 
 ```commandline
-python3 finetune_using_clm.py model.name=nomic-ai/gpt4all-j output_dir=nomic-ai/gpt4all-j-tuned dataset.wandb=1 dataset.name=/opentensor/opentensor-validator/runs/kltiefxf
+python gpt4all_finetuning.py model.name=nomic-ai/gpt4all-j output_dir=nomic-ai/gpt4all-j-tuned dataset.wandb=1 dataset.name=/opentensor/opentensor-validator/runs/kltiefxf
 ```
 
 Note the nested structure in the config, since `model` is above `name` in `conf.yaml`, you must override
