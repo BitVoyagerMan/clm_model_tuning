@@ -494,6 +494,7 @@ def main(cfg: DictConfig):
             if cfg.tracking.enabled is True:
                 total_loss += loss.detach().float()
             loss = loss / cfg.training.gradient_accumulation_steps
+            print(loss)
             accelerator.backward(loss)
 
             if (
