@@ -67,7 +67,7 @@ def create_accelerator(cfg: DictConfig) -> Accelerator:
 
 
 def load_raw_datasets(cfg: DictConfig) -> DatasetDict:
-    if dataset.wandb == 1:
+    if cfg.dataset.wandb == 1:
         wandbUrl = cfg.dataset.name
         api = wandb.Api()
         run = api.run(wandbUrl)
