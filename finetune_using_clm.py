@@ -177,8 +177,8 @@ def create_optimizer(cfg, model):
     )
 
 
-def tokenize_inputs(config, tokenizer, examples):
-    max_length = config["max_length"]
+def tokenize_inputs(tokenizer, examples):
+    max_length = 1024
 
     # hacky backward compatible
     different_eos = tokenizer.eos_token != "</s>"
@@ -271,7 +271,7 @@ def preprocess(cfg, accelerator, tokenizer, raw_datasets):
     with accelerator.main_process_first():
         kwargs = {}
         train_dataset = raw_datasets.map(
-            lambda ele: tokenize_inputs(config, tokenizer, ele),
+            lambda ele: tokenize_inputs(tokenizer, ele),
             batched=True,
             remove_columns=["source", "prompt"],
             **kwargs
