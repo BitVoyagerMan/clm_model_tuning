@@ -247,45 +247,9 @@ def wait_until_enough_gpu_memory(min_memory_available, max_retries=10, sleep_tim
     else:
         raise RuntimeError(f"Failed to acquire {min_memory_available} bytes of free GPU memory after {max_retries} retries.")
 def preprocess(cfg, accelerator, tokenizer, raw_datasets):
-    # First we tokenize all the texts.
-    # column_names = raw_datasets.column_names
-    # text_column_name = "text" if "text" in column_names else column_names["train"][0]
-    # if cfg.dataset.concatenate_raw is True:
-    #     pad = False
-    # else:
-    #     pad = "max_length"
-
 
     raw_datasets = raw_datasets.train_test_split(test_size=.05, seed=30)
     train_dataset, val_dataset = raw_datasets["train"], raw_datasets["test"]
-    # def group_texts(examples):
-    #     # Concatenate all texts.
-    #     concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
-    #     total_length = len(concatenated_examples[list(examples.keys())[0]])
-    #     if total_length >= cfg.dataset.block_size:
-    #         total_length = (
-    #                                total_length // cfg.dataset.block_size
-    #                        ) * cfg.dataset.block_size
-    #     # Split by chunks of max_len.
-    #     result = {
-    #         k: [
-    #             t[i: i + cfg.dataset.block_size]
-    #             for i in range(0, total_length, cfg.dataset.block_size)
-    #         ]
-    #         for k, t in concatenated_examples.items()
-    #     }
-    #     result["labels"] = result["input_ids"].copy()
-    #     return result
-
-    # def tokenize_fn(examples):
-    #     result = tokenizer(
-    #         examples[text_column_name],
-    #         padding=pad,
-    #         truncation=True,
-    #         max_length=cfg.dataset.block_size,
-    #     )
-    #     result["labels"] = result["input_ids"].copy()
-    #     return result
 
     with accelerator.main_process_first():
         kwargs = {}
@@ -306,30 +270,14 @@ def preprocess(cfg, accelerator, tokenizer, raw_datasets):
         train_dataloader = DataLoader(
             train_dataset,
             collate_fn=DefaultDataCollator(),
-            batch_size=4,
+            batch_size=cfg.training.train_batch_size,
         )
 
         val_dataloader = DataLoader(
             val_dataset,
             collate_fn=DefaultDataCollator(),
-            batch_size=4,
+            batch_size=cfg.training.eval_batch_size,
         )
-        # tokenized_datasets = raw_datasets.map(
-        #     tokenize_fn,
-        #     batched=True,
-        #     num_proc=cfg.tokenizer.preprocessing_num_workers,
-        #     load_from_cache_file=not cfg.dataset.overwrite_cache,
-        #     desc="Running tokenizer on dataset",
-        # )
-
-        # if cfg.dataset.concatenate_raw is True:
-        #     tokenized_datasets = tokenized_datasets.map(
-        #         group_texts,
-        #         batched=True,
-        #         num_proc=cfg.tokenizer.preprocessing_num_workers,
-        #         load_from_cache_file=not cfg.dataset.overwrite_cache,
-        #         desc=f"Grouping texts in chunks of {cfg.dataset.block_size}",
-        #     )
 
     return train_dataloader, val_dataloader
 
@@ -370,43 +318,13 @@ def main(cfg: DictConfig):
     if accelerator.distributed_type == DistributedType.TPU:
         model.tie_weights()
 
-    # Load and preprocess data
+    # Load data
     raw_datasets = load_raw_datasets(cfg)
-    # tokenized_datasets = preprocess(cfg, accelerator, tokenizer, raw_datasets)
-    # # if "train" not in tokenized_datasets.column_names:
-    # tokenized_datasets = tokenized_datasets.train_test_split(
-    #     test_size=cfg.training.val_split_percent / 100
-    # )
-    # tokenized_datasets_test_valid = tokenized_datasets["test"].train_test_split(
-    #     test_size=0.5
-    # )
-    # tokenized_datasets["test"] = tokenized_datasets_test_valid["train"]
-    # tokenized_datasets["validation"] = tokenized_datasets_test_valid["test"]
 
-    # train_dataset = tokenized_datasets["train"]
-    # eval_dataset = tokenized_datasets["validation"]
-
-    # # Log a few random samples from the training set:
-    # for index in random.sample(range(len(train_dataset)), 3):
-    #     ex = train_dataset[index]
-    #     logger.info(f"Sample {index} of the training set: {ex}: \n")
-    #     logger.info(tokenizer.decode(ex["input_ids"]))
 
     # DataLoaders creation:\
     train_dataloader, eval_dataloader = preprocess(cfg, accelerator, tokenizer, raw_datasets)
-    # train_dataloader = DataLoader(
-    #     train_dataset,
-    #     shuffle=True,
-    #     collate_fn=default_data_collator,
-    #     batch_size=cfg.training.train_batch_size,
-    # )
-    # eval_dataloader = DataLoader(
-    #     eval_dataset,
-    #     collate_fn=default_data_collator,
-    #     batch_size=cfg.training.eval_batch_size,
-    # )
 
-    # Prepare everything using our accelerator
     (
         model,
         optimizer,
