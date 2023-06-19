@@ -13,11 +13,12 @@ import math
 import os
 import random
 from itertools import chain
-
+import wandb
 import datasets
 import hydra
 import torch
 import transformers
+import pandas as pd
 from accelerate import Accelerator, DistributedType
 from accelerate.logging import get_logger
 from accelerate.utils import set_seed
@@ -66,6 +67,28 @@ def create_accelerator(cfg: DictConfig) -> Accelerator:
 
 
 def load_raw_datasets(cfg: DictConfig) -> DatasetDict:
+    if dataset.wandb == 1:
+        wandbUrl = cfg.dataset.name
+        api = wandb.Api()
+        run = api.run(wandbUrl)
+        historyData = run.history()
+        historyData.loc[historyData.best_answer.str.len() == 0, "best_answer"] = '---'
+
+
+        data1 = historyData[["base_prompt", "best_followup"]].copy()
+        data1.columns = ['prompt', 'response']
+        data1["source"] = ""
+
+        data2 = historyData[["answer_prompt", "best_answer"]].copy()
+        data2.columns = ['prompt', 'response']
+        data2["source"] = ""
+
+        data = pd.concat([data1, data2])
+
+
+        reseted_data = data.reset_index(drop=True)
+        dataset = Dataset.from_pandas(reseted_data)
+        return dataset
     if cfg.dataset.name == "bittensor":
 
         dataset = bittensor.dataset(
@@ -100,6 +123,7 @@ def load_raw_datasets(cfg: DictConfig) -> DatasetDict:
 
 
 def load_model_and_tokenizer(cfg: DictConfig):
+    
     if cfg.model.config_name is not None:
         config = AutoConfig.from_pretrained(cfg.model.config_name)
     else:
