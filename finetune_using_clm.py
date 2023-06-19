@@ -287,13 +287,13 @@ def preprocess(cfg, accelerator, tokenizer, raw_datasets):
         train_dataloader = DataLoader(
             train_dataset,
             collate_fn=DefaultDataCollator(),
-            batch_size=16,
+            batch_size=4,
         )
 
         val_dataloader = DataLoader(
             val_dataset,
             collate_fn=DefaultDataCollator(),
-            batch_size=16,
+            batch_size=4,
         )
         # tokenized_datasets = raw_datasets.map(
         #     tokenize_fn,
