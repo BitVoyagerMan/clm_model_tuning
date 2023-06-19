@@ -18,6 +18,7 @@ import datasets
 import hydra
 import torch
 import transformers
+from transformers import AutoModelForCausalLM, AutoTokenizer, get_scheduler, LlamaForCausalLM, DefaultDataCollator
 import pandas as pd
 from accelerate import Accelerator, DistributedType
 from accelerate.logging import get_logger
@@ -176,64 +177,129 @@ def create_optimizer(cfg, model):
     )
 
 
+def tokenize_inputs(config, tokenizer, examples):
+    max_length = config["max_length"]
+
+    # hacky backward compatible
+    different_eos = tokenizer.eos_token != "</s>"
+    out = {"labels": [], "input_ids": []}
+    for prompt, response in zip(examples["prompt"], examples["response"]):
+        if different_eos:
+            if response.count("</s> \n") > 0:
+                response = response.replace("</s> \n", f"{tokenizer.eos_token} \n") 
+
+        prompt_len = len(tokenizer(prompt + "\n", return_tensors="pt")["input_ids"][0])
+
+        # hack if our prompt is super long
+        # we need to include some labels so we arbitrarily trunacate at max_length // 2
+        # if the length is too long
+        if prompt_len >= max_length // 2:
+            # if prompt is too long, truncate
+            # but make sure to truncate to at max 1024 tokens
+            new_len = min(max_length // 2, len(prompt) // 2)
+            prompt = prompt[:new_len]
+            # get new prompt length
+            prompt_len = tokenizer(prompt + "\n", return_tensors="pt", max_length=max_length // 2, truncation=True).input_ids.ne(tokenizer.pad_token_id).sum().item()
+
+        assert prompt_len <= max_length // 2, f"prompt length {prompt_len} exceeds max length {max_length}"
+
+        input_tokens = tokenizer(prompt + "\n" + response + tokenizer.eos_token,
+                                 truncation=True, max_length=max_length, return_tensors="pt")["input_ids"].squeeze()
+
+        labels = input_tokens.clone()
+        labels[:prompt_len] = -100
+        if len(labels) < max_length:
+            # pad to max_length with -100
+            labels = torch.cat([labels, torch.full((max_length - len(labels),), -100)])
+
+        assert (labels == -100).sum() < len(labels), f"Labels are all -100, something wrong. prompt length {prompt_len} exceeds max length {max_length}" 
+        
+        if (labels == -100).sum() == len(labels) - 1:
+            print(prompt)
+            print(response)
+            raise
+
+        input_tokens = tokenizer.pad({"input_ids": input_tokens}, padding="max_length", max_length=max_length)["input_ids"]
+        out["labels"].append(labels)
+        out["input_ids"].append(input_tokens)
+
+    out = {k: torch.stack(v) if isinstance(v, list) else v for k, v in out.items()}
+
+    return out
+
 def preprocess(cfg, accelerator, tokenizer, raw_datasets):
     # First we tokenize all the texts.
-    column_names = raw_datasets.column_names
-    text_column_name = "text" if "text" in column_names else column_names["train"][0]
-    if cfg.dataset.concatenate_raw is True:
-        pad = False
-    else:
-        pad = "max_length"
+    # column_names = raw_datasets.column_names
+    # text_column_name = "text" if "text" in column_names else column_names["train"][0]
+    # if cfg.dataset.concatenate_raw is True:
+    #     pad = False
+    # else:
+    #     pad = "max_length"
 
-    def group_texts(examples):
-        # Concatenate all texts.
-        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
-        total_length = len(concatenated_examples[list(examples.keys())[0]])
-        if total_length >= cfg.dataset.block_size:
-            total_length = (
-                                   total_length // cfg.dataset.block_size
-                           ) * cfg.dataset.block_size
-        # Split by chunks of max_len.
-        result = {
-            k: [
-                t[i: i + cfg.dataset.block_size]
-                for i in range(0, total_length, cfg.dataset.block_size)
-            ]
-            for k, t in concatenated_examples.items()
-        }
-        result["labels"] = result["input_ids"].copy()
-        return result
 
-    def tokenize_fn(examples):
-        result = tokenizer(
-            examples[text_column_name],
-            padding=pad,
-            truncation=True,
-            max_length=cfg.dataset.block_size,
-        )
-        result["labels"] = result["input_ids"].copy()
-        return result
+    raw_datasets = raw_datasets.train_test_split(test_size=.05, seed=30)
+
+    # def group_texts(examples):
+    #     # Concatenate all texts.
+    #     concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+    #     total_length = len(concatenated_examples[list(examples.keys())[0]])
+    #     if total_length >= cfg.dataset.block_size:
+    #         total_length = (
+    #                                total_length // cfg.dataset.block_size
+    #                        ) * cfg.dataset.block_size
+    #     # Split by chunks of max_len.
+    #     result = {
+    #         k: [
+    #             t[i: i + cfg.dataset.block_size]
+    #             for i in range(0, total_length, cfg.dataset.block_size)
+    #         ]
+    #         for k, t in concatenated_examples.items()
+    #     }
+    #     result["labels"] = result["input_ids"].copy()
+    #     return result
+
+    # def tokenize_fn(examples):
+    #     result = tokenizer(
+    #         examples[text_column_name],
+    #         padding=pad,
+    #         truncation=True,
+    #         max_length=cfg.dataset.block_size,
+    #     )
+    #     result["labels"] = result["input_ids"].copy()
+    #     return result
 
     with accelerator.main_process_first():
-
-        tokenized_datasets = raw_datasets.map(
-            tokenize_fn,
+        kwargs = {}
+        train_dataset = raw_datasets.map(
+            lambda ele: tokenize_inputs(config, tokenizer, ele),
             batched=True,
-            num_proc=cfg.tokenizer.preprocessing_num_workers,
-            load_from_cache_file=not cfg.dataset.overwrite_cache,
-            desc="Running tokenizer on dataset",
+            remove_columns=["source", "prompt"],
+            **kwargs
         )
+        train_dataset = train_dataset.with_format("torch")
+        train_dataloader = DataLoader(
+            train_dataset,
+            collate_fn=DefaultDataCollator(),
+            batch_size=16
+        )
+        # tokenized_datasets = raw_datasets.map(
+        #     tokenize_fn,
+        #     batched=True,
+        #     num_proc=cfg.tokenizer.preprocessing_num_workers,
+        #     load_from_cache_file=not cfg.dataset.overwrite_cache,
+        #     desc="Running tokenizer on dataset",
+        # )
 
-        if cfg.dataset.concatenate_raw is True:
-            tokenized_datasets = tokenized_datasets.map(
-                group_texts,
-                batched=True,
-                num_proc=cfg.tokenizer.preprocessing_num_workers,
-                load_from_cache_file=not cfg.dataset.overwrite_cache,
-                desc=f"Grouping texts in chunks of {cfg.dataset.block_size}",
-            )
+        # if cfg.dataset.concatenate_raw is True:
+        #     tokenized_datasets = tokenized_datasets.map(
+        #         group_texts,
+        #         batched=True,
+        #         num_proc=cfg.tokenizer.preprocessing_num_workers,
+        #         load_from_cache_file=not cfg.dataset.overwrite_cache,
+        #         desc=f"Grouping texts in chunks of {cfg.dataset.block_size}",
+        #     )
 
-    return tokenized_datasets
+    return train_dataloader
 
 
 @hydra.main(version_base=None, config_path="conf", config_name="config")
