@@ -435,7 +435,7 @@ def main(cfg: DictConfig):
         accelerator.init_trackers("finetune_using_clm", experiment_config)
 
     logger.info("***** Running training *****")
-    logger.info(f"  Num examples = {len(train_dataset)}")
+    #logger.info(f"  Num examples = {len(train_dataset)}")
     logger.info(f"  Num Epochs = {cfg.training.num_epochs}")
     logger.info(
         f"  Gradient Accumulation steps = {cfg.training.gradient_accumulation_steps}"
