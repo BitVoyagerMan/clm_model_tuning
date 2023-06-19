@@ -474,6 +474,8 @@ def main(cfg: DictConfig):
             total_loss = 0
         train_losses = []
         for step, batch in enumerate(train_dataloader):
+            torch.cuda.memory_summary(device=None, abbreviated=False)
+            torch.cuda.empty_cache()
             # We need to skip steps until we reach the resumed step
             if (
                     cfg.training.checkpoint.resume_from_checkpoint
